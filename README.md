@@ -1,117 +1,95 @@
-# 🏗️ Datalake Regression Testing — Medallion Architecture
+# Datalake Regression Testing — Medallion Architecture
 
-> **Big Data Testing Project** | PySpark · Pytest · Medallion Architecture (Bronze/Silver/Gold)
-
----
-
-## 🇫🇷 Description
-
-Suite de tests de non-régression automatisés pour une architecture Datalake **Bronze → Silver → Gold**.
-Vérifie que chaque transformation ne dégrade pas la qualité des données entre les releases.
-Inclut un comparateur DataFrame pour détecter les dérives de schéma, volumétrie et statistiques.
-
-## 🇬🇧 Description
-
-Automated regression test suite for a **Bronze → Silver → Gold** Medallion Datalake architecture.
-Ensures that each pipeline release doesn't degrade data quality. Includes a DataFrame comparator
-for detecting schema drift, row count anomalies, and statistical deviations between releases.
+Automated regression test suite for a Bronze / Silver / Gold Medallion Datalake architecture built with PySpark. Verifies that each pipeline release does not degrade data quality across layers. Includes a DataFrame comparator for detecting schema drift, row count anomalies, and statistical deviations between releases.
 
 ---
 
-## 🗂️ Structure du projet
+## Project structure
 
 ```
 02_datalake_regression_tests/
 ├── src/
 │   ├── datalake/
-│   │   └── layers.py              # Transformations Bronze→Silver→Gold
+│   │   └── layers.py                  # Bronze -> Silver -> Gold transformations
 │   └── comparators/
-│       └── dataframe_comparator.py  # Comparaison release-over-release
+│       └── dataframe_comparator.py    # Release-over-release DataFrame comparison
 ├── tests/
-│   ├── conftest.py                  # Fixtures Spark + datasets de test
+│   ├── conftest.py                    # Spark fixtures + sample datasets
 │   ├── smoke/
-│   │   └── test_smoke.py            # TC-SMOKE-001 → 004 (sanity checks rapides)
+│   │   └── test_smoke.py              # TC-SMOKE-001 to 004 — fast sanity checks
 │   └── regression/
-│       ├── test_bronze_to_silver.py # TC-REG-001 → 010
-│       ├── test_silver_to_gold.py   # TC-GOLD-001 → 008
-│       └── test_comparator.py       # TC-COMP-001 → 006
+│       ├── test_bronze_to_silver.py   # TC-REG-001 to 010
+│       ├── test_silver_to_gold.py     # TC-GOLD-001 to 008
+│       └── test_comparator.py         # TC-COMP-001 to 006
 ├── data/
-│   ├── bronze/    # Données brutes (CSV/JSON)
-│   ├── silver/    # Données nettoyées (Parquet)
-│   ├── gold/      # Données agrégées (Parquet)
-│   └── reference/ # Snapshots de référence pour comparaison release N-1
-├── docs/
-└── scripts/
-    └── run_regression.sh
+│   ├── bronze/
+│   ├── silver/
+│   ├── gold/
+│   └── reference/    # Reference snapshots for release N-1 comparison
+└── docs/
 ```
 
 ---
 
-## 🏛️ Architecture Medallion
-
-```
-CSV/JSON → [BRONZE] → bronze_to_silver() → [SILVER] → silver_to_gold() → [GOLD]
-  Raw        Stockage brut    Nettoyage             Agrégation business
-```
-
-| Couche | Description | Règles appliquées |
-|--------|-------------|-------------------|
-| **Bronze** | Données brutes, telles quelles | Aucune transformation |
-| **Silver** | Données nettoyées et enrichies | Filtrage NULLs, cast types, dédup, statuts valides |
-| **Gold** | Agrégats business | Transactions COMPLETED uniquement |
-
----
-
-## 🧪 Stratégie de Test
-
-### Pyramide de tests
-
-```
-         [Smoke]     ← 4 tests rapides, run first
-        [Regression] ← 24 tests de non-régression
-```
-
-### Types de vérification
-
-| Vérification | Outil | Description |
-|---|---|---|
-| Schema drift | `compare_schemas()` | Colonnes ajoutées/supprimées/typées |
-| Volumétrie | `compare_row_counts()` | Delta % entre releases (tolérance configurable) |
-| Contenu | `compare_content()` | Lignes disparues / nouvelles |
-| Dérive statistique | `compare_numeric_stats()` | SUM/MEAN drift sur colonnes numériques |
-| Règles métier | Tests regression | Nulls, doublons, formats, réconciliation |
-
----
-
-## ⚙️ Installation & Exécution
+## Setup
 
 ```bash
 pip install -r requirements.txt
 
-# Smoke tests (rapides — à lancer en premier)
+# Smoke tests — run first
 pytest tests/smoke/ -v
 
-# Tests de régression complets
+# Full regression suite
 pytest tests/regression/ -v
 
-# Tous les tests avec rapport HTML
+# All tests with HTML report
 pytest --html=reports/regression_report.html
 ```
 
 ---
 
-## 📊 Anomalies volontaires dans les données de test
+## Architecture
 
-| Anomalie | Couche | Test qui la détecte |
-|---|---|---|
-| `customer_id = NULL` | Bronze | TC-REG-002 |
-| `amount = -50.00` | Bronze | TC-REG-003 |
-| `status = CANCELLED` | Bronze | TC-REG-004 |
-| Doublon sur `event_id` | Bronze | TC-REG-005 |
+```
+CSV/JSON -> [BRONZE] -> bronze_to_silver() -> [SILVER] -> silver_to_gold() -> [GOLD]
+```
+
+| Layer | Description | Rules applied |
+|-------|-------------|---------------|
+| Bronze | Raw data, as-is | No transformation |
+| Silver | Cleaned and typed data | NULL filter, cast, dedup, valid statuses |
+| Gold | Business aggregates | COMPLETED transactions only |
 
 ---
 
-## 👩‍💻 Auteure
+## Test strategy
 
-**Imane Moussafir** — Ingénieure Data & BI  
-*Projet réalisé dans le cadre d'une candidature Testeur Big Data / Datalake.*
+| Type | Scope |
+|------|-------|
+| Smoke tests | Spark session, layer imports, no-exception checks |
+| Regression — Bronze to Silver | NULL filtering, type casting, dedup, status validation, row count |
+| Regression — Silver to Gold | Reconciliation, avg consistency, date ordering, uniqueness |
+| Comparator | Schema drift, row count delta, content diff, statistical drift |
+
+---
+
+## Intentional anomalies in test data
+
+| Anomaly | Layer | Test that detects it |
+|---------|-------|----------------------|
+| NULL customer_id | Bronze | TC-REG-002 |
+| Negative amount -50.00 | Bronze | TC-REG-003 |
+| Invalid status CANCELLED | Bronze | TC-REG-004 |
+| Duplicate event_id E001 | Bronze | TC-REG-005 |
+
+---
+
+## Stack
+
+PySpark 3.4+ / Pytest / Medallion Architecture
+
+---
+
+## Author
+
+Imane Moussafir — Data & BI Engineer
