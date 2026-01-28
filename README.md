@@ -1,95 +1,54 @@
-# Datalake Regression Testing — Medallion Architecture
+# datalake-regression-tests
 
-Automated regression test suite for a Bronze / Silver / Gold Medallion Datalake architecture built with PySpark. Verifies that each pipeline release does not degrade data quality across layers. Includes a DataFrame comparator for detecting schema drift, row count anomalies, and statistical deviations between releases.
+One thing I noticed working on ETL pipelines is that teams often break things between releases without realizing it — a column gets renamed, a filter gets tightened, an aggregation changes. This project is my attempt at building a regression harness that catches that kind of drift automatically.
 
----
+The architecture follows the Medallion pattern (Bronze -> Silver -> Gold) which is standard in Databricks/Datalake environments. Each layer has its own set of checks, and there's also a DataFrame comparator that you can point at two versions of the same output to detect schema changes, row count anomalies, or statistical drift.
 
-## Project structure
+## Structure
 
 ```
-02_datalake_regression_tests/
-├── src/
-│   ├── datalake/
-│   │   └── layers.py                  # Bronze -> Silver -> Gold transformations
-│   └── comparators/
-│       └── dataframe_comparator.py    # Release-over-release DataFrame comparison
-├── tests/
-│   ├── conftest.py                    # Spark fixtures + sample datasets
-│   ├── smoke/
-│   │   └── test_smoke.py              # TC-SMOKE-001 to 004 — fast sanity checks
-│   └── regression/
-│       ├── test_bronze_to_silver.py   # TC-REG-001 to 010
-│       ├── test_silver_to_gold.py     # TC-GOLD-001 to 008
-│       └── test_comparator.py         # TC-COMP-001 to 006
-├── data/
-│   ├── bronze/
-│   ├── silver/
-│   ├── gold/
-│   └── reference/    # Reference snapshots for release N-1 comparison
-└── docs/
+src/
+  datalake/
+    layers.py                  # the three transformations: bronze_to_silver, silver_to_gold
+  comparators/
+    dataframe_comparator.py    # compare two DataFrames across schema, count, content, stats
+
+tests/
+  smoke/
+    test_smoke.py              # 4 fast checks — run these first before the full suite
+  regression/
+    test_bronze_to_silver.py   # 10 tests: nulls, types, dedup, status filter, row count
+    test_silver_to_gold.py     # 8 tests: reconciliation, avg consistency, ordering
+    test_comparator.py         # 6 tests: schema drift, count delta, content diff, stat drift
 ```
 
----
-
-## Setup
+## How to run
 
 ```bash
 pip install -r requirements.txt
 
-# Smoke tests — run first
+# Start with smoke tests — if these fail, don't bother with the rest
 pytest tests/smoke/ -v
 
-# Full regression suite
+# Full suite
 pytest tests/regression/ -v
-
-# All tests with HTML report
-pytest --html=reports/regression_report.html
 ```
 
----
+## What the layers do
 
-## Architecture
+Bronze is raw data, untouched. Silver is where the cleaning happens: nulls on key columns get dropped, amounts are cast to double, dates parsed to timestamp, invalid statuses filtered out, duplicates removed. Gold aggregates the cleaned data — only COMPLETED transactions, grouped by customer and category.
 
-```
-CSV/JSON -> [BRONZE] -> bronze_to_silver() -> [SILVER] -> silver_to_gold() -> [GOLD]
-```
+The test data is set up with four deliberate anomalies in Bronze (a null customer_id, a negative amount, a CANCELLED status that should be filtered, and a duplicate event_id) to make sure the Silver transformation actually handles all of them.
 
-| Layer | Description | Rules applied |
-|-------|-------------|---------------|
-| Bronze | Raw data, as-is | No transformation |
-| Silver | Cleaned and typed data | NULL filter, cast, dedup, valid statuses |
-| Gold | Business aggregates | COMPLETED transactions only |
+## The comparator
 
----
+`dataframe_comparator.py` has four functions you can use independently:
 
-## Test strategy
-
-| Type | Scope |
-|------|-------|
-| Smoke tests | Spark session, layer imports, no-exception checks |
-| Regression — Bronze to Silver | NULL filtering, type casting, dedup, status validation, row count |
-| Regression — Silver to Gold | Reconciliation, avg consistency, date ordering, uniqueness |
-| Comparator | Schema drift, row count delta, content diff, statistical drift |
-
----
-
-## Intentional anomalies in test data
-
-| Anomaly | Layer | Test that detects it |
-|---------|-------|----------------------|
-| NULL customer_id | Bronze | TC-REG-002 |
-| Negative amount -50.00 | Bronze | TC-REG-003 |
-| Invalid status CANCELLED | Bronze | TC-REG-004 |
-| Duplicate event_id E001 | Bronze | TC-REG-005 |
-
----
+- `compare_schemas` — detects added, removed, or retyped columns
+- `compare_row_counts` — flags delta above a configurable % threshold
+- `compare_content` — left-anti join on key columns to find rows that appeared or disappeared
+- `compare_numeric_stats` — checks SUM and MEAN drift on numeric columns
 
 ## Stack
 
-PySpark 3.4+ / Pytest / Medallion Architecture
-
----
-
-## Author
-
-Imane Moussafir — Data & BI Engineer
+PySpark 3.4, Pytest
