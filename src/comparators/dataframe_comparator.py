@@ -154,3 +154,6 @@ def compare_numeric_stats(
             result.fail(f"MEAN drift on '{col}': {mean_drift:.3f}% > {tolerance_pct}%")
 
     return result
+
+# threshold configurable per use case
+DEFAULT_COUNT_DELTA_PCT = 5.0
